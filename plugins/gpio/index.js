@@ -27,7 +27,7 @@ define([ 'pi-gpio' ], function(gpio) {
 
     // Ping interval
     setInterval(function() {
-      that.parse();
+      that.readInputs();
     }, 100);
 
     app.get('sockets').on('connection', function(socket) {
@@ -51,14 +51,14 @@ define([ 'pi-gpio' ], function(gpio) {
     var that = this;
     this.pluginHelper.findItem(this.collection, data.id, function(err, item, collection) {
       item.value = data.value + '';
-      gpio.open(parseInt(item.pin), "output", function(err) {
-        gpio.write(parseInt(item.pin), parseInt(item.value), function() {
-          gpio.close(parseInt(item.pin));
-          that.values[item._id] = item.value;
-          that.app.get('sockets').emit('gpio-output', {
-            id: item._id,
-            value: item.value
-          });
+      gpio.write(item.pin, item.value, function(err) {
+        if (err) {
+          console.error("WARN [gpio] write failed for pin " + item.pin);
+        }
+        that.values[item._id] = item.value;
+        that.app.get('sockets').emit('gpio-output', {
+          id: item._id,
+          value: item.value
         });
       });
     });
@@ -67,9 +67,9 @@ define([ 'pi-gpio' ], function(gpio) {
   /**
    * Parse GPIO the ports that are used as input and send the result to the client websocket
    * 
-   * @method parse
+   * @method readInputs
    */
-  Gpio.prototype.parse = function() {
+  Gpio.prototype.readInputs = function() {
     var that = this;
     if (that.app.get('clients').length > 0) {
       that.app.get('db').collection(this.collection, function(err, collection) {
@@ -77,15 +77,18 @@ define([ 'pi-gpio' ], function(gpio) {
           direction: 'input'
         }).toArray(function(err, result) {
           result.forEach(function(item) {
-            gpio.setDirection(parseInt(item.pin), "input", function(err) {
-              gpio.read(parseInt(item.pin), function(err, value) {
-                if (!err) {
-                  that.values[item._id] = value;
-                  that.app.get('sockets').emit('gpio-input', {
-                    id: item._id,
-                    value: value
-                  });
-                }
+            gpio.read(item.pin, function(err, value) {
+              value = value ? 1 : 0;
+
+              if (err) {
+                console.error("WARN [gpio] read failed for pin " + item.pin);
+                value = Number.NaN;
+              }
+
+              that.values[item._id] = value;
+              that.app.get('sockets').emit('gpio-input', {
+                id: item._id,
+                value: value
               });
             });
           });
